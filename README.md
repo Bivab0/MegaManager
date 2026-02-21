@@ -22,16 +22,19 @@ Most automation bots are either fully autonomous (risky) or fully manual (time-c
 ### 1. The Trend Scout (Content Strategy)
 
 * **Frequency:** Twice daily (e.g., Morning and Evening).
-* **Action:** The bot automatically scans the platform’s trending charts.
-* **Output:** It sends a curated list of **5 trending topics** directly to your Telegram.
-* **Purpose:** To give you instant inspiration for your next video without you having to manually research what's "viral."
+* **Action:** The bot automatically scans trending videos **in your niche** (same category as your channel).
+* **Output:** It sends a curated list of **5 trending topics** from your category, excluding your own videos.
+* **Purpose:** Get relevant inspiration without sorting through unrelated viral content. See what's working in your specific niche.
 
 ### 2. The Pulse Monitor (Channel Analytics)
 
 * **Frequency:** Every 3 hours (180 minutes).
-* **Action:** The bot performs a "Stat Snapshot." It calls the platform API to fetch current views, subscriber counts, and engagement metrics.
-* **Output:** A clean, concise report sent to Telegram showing how your channel is performing at that exact moment.
-* **Statelessness:** No database is used. It’s a "Live Feed" approach—it simply grabs the data and hands it to you.
+* **Action:** Fetches **actionable recent metrics** - your last 5 videos' performance, views per day, likes, and comments.
+* **Output:** A performance snapshot showing:
+  * Current subscriber count
+  * Each recent video's views, views/day rate, likes, and comments
+  * Age of each video in days
+* **Why it matters:** Track which videos are gaining traction, spot trending content early, and understand your recent performance patterns. No useless total counts—only metrics that help you make decisions.
 
 ### 3. The Smart Responder (Community Management)
 
@@ -179,16 +182,58 @@ megamanager/
 When the bot runs its trend scan, you'll receive a Telegram message like:
 
 ```
-🔥 Trending Now (Top 5):
+🔥 Trending in Your Niche (Top 5):
 
-1. "How to build AI agents" - 2.3M views
-2. "Golang vs Rust comparison" - 1.8M views
-3. "Best productivity apps 2026" - 1.5M views
-4. "Cloud architecture patterns" - 1.2M views
-5. "API design best practices" - 980K views
+1. "How to build AI agents in 2026" - 2.3M views
+2. "Golang microservices tutorial" - 1.8M views
+3. "Best Go frameworks comparison" - 1.5M views
+4. "Cloud-native Go patterns" - 1.2M views
+5. "Go API design best practices" - 980K views
 
-💡 Pick one and create your next video!
+💡 Inspiration: Pick a topic and create your version!
 ```
+
+**Note:** Only shows trending videos from your channel's category, so you get relevant inspiration.
+
+### Pulse Monitor Notification
+
+Every 3 hours, you'll receive actionable metrics:
+
+```
+📊 Channel Pulse Monitor
+
+👥 Subscribers: 12.5K
+
+🎬 Recent Videos Performance:
+
+1. Building a YouTube Bot in Go
+   👀 15.2K views (3.8K/day) | 👍 892 | 💬 143
+   📅 4 days ago
+
+2. Golang Concurrency Explained
+   👀 8.5K views (2.1K/day) | 👍 445 | 💬 67
+   📅 4 days ago
+
+3. REST API with Go - Complete Guide
+   👀 22.1K views (1.3K/day) | 👍 1.2K | 💬 201
+   📅 17 days ago
+
+4. Docker & Go: Best Practices
+   👀 31.5K views (1.1K/day) | 👍 1.8K | 💬 289
+   📅 28 days ago
+
+5. Testing in Go - Comprehensive Tutorial
+   👀 45.7K views (918/day) | 👍 2.3K | 💬 412
+   📅 50 days ago
+
+Updated: Feb 21, 21:05 PST
+```
+
+**Key metrics:**
+- **Views/day rate** - Spot which videos are gaining momentum
+- **Engagement** - Track likes and comments
+- **Video age** - Understand performance over time
+- **No useless totals** - Only actionable, recent data
 
 ### Smart Responder Flow
 

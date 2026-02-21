@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -28,11 +29,20 @@ type Comment struct {
 	CreatedAt time.Time
 }
 
-// ChannelStats represents channel analytics
+// ChannelStats represents channel analytics with recent performance
 type ChannelStats struct {
 	SubscriberCount int64
-	ViewCount       int64
-	VideoCount      int64
+	RecentVideos    []*RecentVideo
+}
+
+// RecentVideo represents a recent video's performance
+type RecentVideo struct {
+	Title        string
+	ViewCount    int64
+	LikeCount    int64
+	CommentCount int64
+	PublishedAt  time.Time
+	AgeInDays    int
 }
 
 // YouTubePlatform handles all YouTube API operations
@@ -55,15 +65,25 @@ func NewYouTubePlatform(apiKey, channelID string) *YouTubePlatform {
 	}
 }
 
-// GetTrendingVideos fetches trending videos
+// GetTrendingVideos fetches trending videos in the same category as your channel
 func (y *YouTubePlatform) GetTrendingVideos(ctx context.Context, limit int) ([]*Video, error) {
+	// First, get the channel's category
+	categoryID, err := y.getChannelCategory(ctx)
+	if err != nil {
+		// Fallback to generic trending if we can't get category
+		categoryID = ""
+	}
+
 	endpoint := fmt.Sprintf("%s/videos", y.baseURL)
 
 	params := url.Values{}
 	params.Set("part", "snippet,statistics")
 	params.Set("chart", "mostPopular")
 	params.Set("regionCode", "US")
-	params.Set("maxResults", fmt.Sprintf("%d", limit))
+	params.Set("maxResults", fmt.Sprintf("%d", limit*2)) // Get more to filter
+	if categoryID != "" {
+		params.Set("videoCategoryId", categoryID)
+	}
 	params.Set("key", y.apiKey)
 
 	reqURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
@@ -102,8 +122,13 @@ func (y *YouTubePlatform) GetTrendingVideos(ctx context.Context, limit int) ([]*
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	videos := make([]*Video, 0, len(result.Items))
+	videos := make([]*Video, 0, limit)
 	for _, item := range result.Items {
+		// Skip your own videos
+		if item.Snippet.ChannelID == y.channelID {
+			continue
+		}
+
 		viewCount := parseInt64(item.Statistics.ViewCount)
 		videos = append(videos, &Video{
 			ID:          item.ID,
@@ -112,13 +137,101 @@ func (y *YouTubePlatform) GetTrendingVideos(ctx context.Context, limit int) ([]*
 			ChannelID:   item.Snippet.ChannelID,
 			PublishedAt: item.Snippet.PublishedAt,
 		})
+
+		if len(videos) >= limit {
+			break
+		}
 	}
 
 	return videos, nil
 }
 
-// GetChannelStats fetches channel statistics
+// getChannelCategory fetches the primary category of the channel's videos
+func (y *YouTubePlatform) getChannelCategory(ctx context.Context) (string, error) {
+	// Get a recent video from the channel
+	videos, err := y.getChannelVideos(ctx, 1)
+	if err != nil || len(videos) == 0 {
+		return "", err
+	}
+
+	// Get the video details to find its category
+	endpoint := fmt.Sprintf("%s/videos", y.baseURL)
+	params := url.Values{}
+	params.Set("part", "snippet")
+	params.Set("id", videos[0].ID)
+	params.Set("key", y.apiKey)
+
+	reqURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := y.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to get video category")
+	}
+
+	var result struct {
+		Items []struct {
+			Snippet struct {
+				CategoryID string `json:"categoryId"`
+			} `json:"snippet"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	if len(result.Items) > 0 {
+		return result.Items[0].Snippet.CategoryID, nil
+	}
+
+	return "", fmt.Errorf("no category found")
+}
+
+// GetChannelStats fetches channel statistics with recent video performance
 func (y *YouTubePlatform) GetChannelStats(ctx context.Context) (*ChannelStats, error) {
+	// Get subscriber count
+	subscriberCount, err := y.getSubscriberCount(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get recent videos
+	videos, err := y.getChannelVideos(ctx, 5)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(videos) == 0 {
+		return &ChannelStats{
+			SubscriberCount: subscriberCount,
+			RecentVideos:    []*RecentVideo{},
+		}, nil
+	}
+
+	// Get detailed stats for each video
+	recentVideos, err := y.getVideoStats(ctx, videos)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ChannelStats{
+		SubscriberCount: subscriberCount,
+		RecentVideos:    recentVideos,
+	}, nil
+}
+
+// getSubscriberCount fetches just the subscriber count
+func (y *YouTubePlatform) getSubscriberCount(ctx context.Context) (int64, error) {
 	endpoint := fmt.Sprintf("%s/channels", y.baseURL)
 
 	params := url.Values{}
@@ -130,12 +243,64 @@ func (y *YouTubePlatform) GetChannelStats(ctx context.Context) (*ChannelStats, e
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := y.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch channel stats: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("YouTube API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Items []struct {
+			Statistics struct {
+				SubscriberCount string `json:"subscriberCount"`
+			} `json:"statistics"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(result.Items) == 0 {
+		return 0, fmt.Errorf("channel not found")
+	}
+
+	return parseInt64(result.Items[0].Statistics.SubscriberCount), nil
+}
+
+// getVideoStats fetches detailed statistics for multiple videos
+func (y *YouTubePlatform) getVideoStats(ctx context.Context, videos []*Video) ([]*RecentVideo, error) {
+	// Build video IDs string
+	var videoIDs []string
+	for _, v := range videos {
+		videoIDs = append(videoIDs, v.ID)
+	}
+
+	endpoint := fmt.Sprintf("%s/videos", y.baseURL)
+
+	params := url.Values{}
+	params.Set("part", "snippet,statistics")
+	params.Set("id", strings.Join(videoIDs, ","))
+	params.Set("key", y.apiKey)
+
+	reqURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := y.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch channel stats: %w", err)
+		return nil, fmt.Errorf("failed to fetch video stats: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -146,10 +311,14 @@ func (y *YouTubePlatform) GetChannelStats(ctx context.Context) (*ChannelStats, e
 
 	var result struct {
 		Items []struct {
+			Snippet struct {
+				Title       string    `json:"title"`
+				PublishedAt time.Time `json:"publishedAt"`
+			} `json:"snippet"`
 			Statistics struct {
-				SubscriberCount string `json:"subscriberCount"`
-				ViewCount       string `json:"viewCount"`
-				VideoCount      string `json:"videoCount"`
+				ViewCount    string `json:"viewCount"`
+				LikeCount    string `json:"likeCount"`
+				CommentCount string `json:"commentCount"`
 			} `json:"statistics"`
 		} `json:"items"`
 	}
@@ -158,16 +327,22 @@ func (y *YouTubePlatform) GetChannelStats(ctx context.Context) (*ChannelStats, e
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if len(result.Items) == 0 {
-		return nil, fmt.Errorf("channel not found")
+	recentVideos := make([]*RecentVideo, 0, len(result.Items))
+	now := time.Now()
+
+	for _, item := range result.Items {
+		ageInDays := int(now.Sub(item.Snippet.PublishedAt).Hours() / 24)
+		recentVideos = append(recentVideos, &RecentVideo{
+			Title:        item.Snippet.Title,
+			ViewCount:    parseInt64(item.Statistics.ViewCount),
+			LikeCount:    parseInt64(item.Statistics.LikeCount),
+			CommentCount: parseInt64(item.Statistics.CommentCount),
+			PublishedAt:  item.Snippet.PublishedAt,
+			AgeInDays:    ageInDays,
+		})
 	}
 
-	stats := result.Items[0].Statistics
-	return &ChannelStats{
-		SubscriberCount: parseInt64(stats.SubscriberCount),
-		ViewCount:       parseInt64(stats.ViewCount),
-		VideoCount:      parseInt64(stats.VideoCount),
-	}, nil
+	return recentVideos, nil
 }
 
 // GetRecentComments fetches recent comments from channel videos

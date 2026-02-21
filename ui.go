@@ -35,9 +35,9 @@ func (t *TelegramUI) SendMessage(ctx context.Context, text string) error {
 	endpoint := fmt.Sprintf("%s/sendMessage", t.baseURL)
 
 	requestBody := map[string]interface{}{
-		"chat_id":    t.chatID,
-		"text":       text,
-		"parse_mode": "Markdown",
+		"chat_id": t.chatID,
+		"text":    text,
+		// No parse_mode - send as plain text
 	}
 
 	jsonData, err := json.Marshal(requestBody)
@@ -82,9 +82,8 @@ func (t *TelegramUI) SendMessageWithButtons(ctx context.Context, text string, bu
 	}
 
 	requestBody := map[string]interface{}{
-		"chat_id":    t.chatID,
-		"text":       text,
-		"parse_mode": "Markdown",
+		"chat_id": t.chatID,
+		"text":    text,
 		"reply_markup": map[string]interface{}{
 			"inline_keyboard": keyboard,
 		},

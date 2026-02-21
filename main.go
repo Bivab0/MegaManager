@@ -224,11 +224,15 @@ func trendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI) 
 		return err
 	}
 
-	message := "🔥 *Trending Now (Top 5):*\n\n"
-	for i, video := range trending {
-		message += formatVideo(i+1, video)
+	message := "🔥 Trending in Your Niche (Top 5):\n\n"
+	if len(trending) == 0 {
+		message += "No trending videos found in your category\n"
+	} else {
+		for i, video := range trending {
+			message += formatVideo(i+1, video)
+		}
 	}
-	message += "\n💡 Pick one and create your next video!"
+	message += "\n💡 Inspiration: Pick a topic and create your version!"
 
 	return ui.SendMessage(ctx, message)
 }
@@ -347,18 +351,47 @@ func formatViews(count int64) string {
 }
 
 func formatChannelStats(stats *ChannelStats) string {
-	return fmt.Sprintf(`📊 *Channel Analytics*
+	msg := fmt.Sprintf(`📊 Channel Pulse Monitor
 
 👥 Subscribers: %s
-👀 Total Views: %s
-🎬 Total Videos: %d
 
-_Updated: %s_`,
-		formatNumber(stats.SubscriberCount),
-		formatNumber(stats.ViewCount),
-		stats.VideoCount,
-		time.Now().Format("Jan 02, 2006 15:04 MST"),
-	)
+🎬 Recent Videos Performance:
+`,
+		formatNumber(stats.SubscriberCount))
+
+	if len(stats.RecentVideos) == 0 {
+		msg += "\nNo recent videos found\n"
+	} else {
+		for i, video := range stats.RecentVideos {
+			// Calculate views per day
+			viewsPerDay := int64(0)
+			if video.AgeInDays > 0 {
+				viewsPerDay = video.ViewCount / int64(video.AgeInDays)
+			}
+
+			msg += fmt.Sprintf(`
+%d. %s
+   👀 %s views (%s/day) | 👍 %s | 💬 %s
+   📅 %d days ago`,
+				i+1,
+				truncateTitle(video.Title, 60),
+				formatNumber(video.ViewCount),
+				formatNumber(viewsPerDay),
+				formatNumber(video.LikeCount),
+				formatNumber(video.CommentCount),
+				video.AgeInDays)
+		}
+	}
+
+	msg += fmt.Sprintf("\n\nUpdated: %s", time.Now().Format("Jan 02, 15:04 MST"))
+	return msg
+}
+
+func truncateTitle(title string, maxLen int) string {
+	if len(title) <= maxLen {
+		return title
+	}
+	return title[:maxLen-3] + "..."
 }
 
 func formatNumber(n int64) string {
@@ -372,16 +405,16 @@ func formatNumber(n int64) string {
 }
 
 func formatCommentNotification(comment *Comment, aiReply string) string {
-	return fmt.Sprintf(`📬 *New Comment*
+	return fmt.Sprintf(`📬 New Comment
 
 👤 User: %s
 💬 Comment:
 "%s"
 
-🤖 *AI Suggested Reply:*
+🤖 AI Suggested Reply:
 "%s"
 
-_[Note: In full version, buttons would appear here for Confirm/Edit/Ignore]_`,
+[Note: In full version, buttons would appear here for Confirm/Edit/Ignore]`,
 		comment.Author,
 		comment.Text,
 		aiReply,

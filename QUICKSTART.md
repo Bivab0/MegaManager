@@ -106,10 +106,16 @@ Press `Ctrl+C` to stop gracefully.
 ## 📊 What Each Service Does
 
 ### Trend Scout (Every 12 hours)
-Fetches the top 5 trending videos on YouTube and sends them to you. Use this for content inspiration.
+Fetches the top 5 trending videos **in your niche** (same category as your channel) and sends them to you. Excludes your own videos. Get relevant content inspiration without sorting through unrelated viral content.
 
 ### Pulse Monitor (Every 3 hours)
-Checks your channel stats (subscribers, views, videos) and sends you a snapshot.
+Shows **actionable recent metrics**:
+- Your last 5 videos' performance
+- Views per day rate (spot momentum!)
+- Likes and comments engagement
+- Age of each video in days
+
+No useless totals like "lifetime views" - only metrics that help you make decisions NOW.
 
 ### Smart Responder (Every 5 minutes)
 Polls your videos for new comments, generates AI-suggested replies, and sends them to Telegram for your review.
@@ -130,22 +136,33 @@ COMMENT_POLL_INTERVAL=5       # Minutes
 
 ## 📱 Example Telegram Messages
 
-**Trending Videos:**
+**Trending Videos in Your Niche:**
 ```
-🔥 Trending Now (Top 5):
+🔥 Trending in Your Niche (Top 5):
 
-1. "How to build AI agents" - 2.3M views
-2. "Golang tutorial" - 1.8M views
+1. "How to build AI agents in 2026" - 2.3M views
+2. "Golang microservices tutorial" - 1.8M views
 ...
+
+💡 Inspiration: Pick a topic and create your version!
 ```
 
-**Channel Stats:**
+**Recent Video Performance:**
 ```
-📊 Channel Analytics
+📊 Channel Pulse Monitor
 
 👥 Subscribers: 12.5K
-👀 Total Views: 1.2M
-🎬 Total Videos: 45
+
+🎬 Recent Videos Performance:
+
+1. Your Latest Video Title
+   👀 15.2K views (3.8K/day) | 👍 892 | 💬 143
+   📅 4 days ago
+
+2. Previous Video Title
+   👀 8.5K views (2.1K/day) | 👍 445 | 💬 67
+   📅 4 days ago
+...
 ```
 
 **New Comment:**
