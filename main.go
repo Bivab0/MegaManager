@@ -17,7 +17,7 @@ import (
 // Config holds all application configuration
 type Config struct {
 	// YouTube
-	YouTubeAPIKey   string
+	YouTubeAPIKey    string
 	YouTubeChannelID string
 
 	// Telegram
@@ -174,10 +174,18 @@ func main() {
 		runSmartResponder(ctx, platform, ai, ui, time.Duration(cfg.CommentPollInterval)*time.Minute)
 	}()
 
+	// Start Command Handler (responds to Telegram commands)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runCommandHandler(ctx, platform, ui)
+	}()
+
 	log.Println("✅ All services started successfully")
 	log.Printf("📊 Trend Scout: every %d minutes", cfg.TrendScoutInterval)
 	log.Printf("📈 Pulse Monitor: every %d minutes", cfg.PulseMonitorInterval)
 	log.Printf("💬 Smart Responder: every %d minutes", cfg.CommentPollInterval)
+	log.Println("🤖 Command Handler: listening for /stats and /trending")
 
 	// Wait for shutdown signal
 	<-sigChan
@@ -224,15 +232,22 @@ func trendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI) 
 		return err
 	}
 
-	message := "🔥 Trending in Your Niche (Top 5):\n\n"
+	// Build formatted message
+	message := "`╔═══════════════════════════╗`\n"
+	message += "`║ TRENDING IN YOUR NICHE   ║`\n"
+	message += "`╚═══════════════════════════╝`\n\n"
+
 	if len(trending) == 0 {
-		message += "No trending videos found in your category\n"
+		message += "No trending videos found"
 	} else {
 		for i, video := range trending {
-			message += formatVideo(i+1, video)
+			message += fmt.Sprintf("🔥 *#%d*\n", i+1)
+			message += "`───────────────────────────`\n"
+			message += fmt.Sprintf("%s\n", escapeMarkdown(truncateTitle(video.Title, 50)))
+			message += fmt.Sprintf("👁 %s\n\n", formatViews(video.ViewCount))
 		}
+		message += "💡 *Pick a topic & create your version!*"
 	}
-	message += "\n💡 Inspiration: Pick a topic and create your version!"
 
 	return ui.SendMessage(ctx, message)
 }
@@ -335,9 +350,89 @@ func smartResponder(ctx context.Context, platform *YouTubePlatform, ai *LLMClien
 	return nil
 }
 
+// runCommandHandler listens for Telegram commands and responds
+func runCommandHandler(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI) {
+	offset := 0
+	ticker := time.NewTicker(2 * time.Second) // Poll every 2 seconds
+	defer ticker.Stop()
+
+	log.Println("🤖 Command Handler started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("🤖 Command Handler stopping...")
+			return
+		case <-ticker.C:
+			updates, err := ui.GetUpdates(ctx, offset)
+			if err != nil {
+				log.Printf("Failed to get updates: %v", err)
+				continue
+			}
+
+			for _, update := range updates {
+				offset = update.UpdateID + 1
+
+				// Handle messages with commands
+				if update.Message != nil && update.Message.Text != "" {
+					command := update.Message.Text
+
+					switch command {
+					case "/stats":
+						log.Println("📊 Received /stats command")
+						if err := pulseMonitor(ctx, platform, ui); err != nil {
+							log.Printf("❌ Failed to send stats: %v", err)
+						}
+
+					case "/trending":
+						log.Println("🔥 Received /trending command")
+						if err := trendScout(ctx, platform, ui); err != nil {
+							log.Printf("❌ Failed to send trending: %v", err)
+						}
+
+					case "/start":
+						welcomeMsg := "👋 *Welcome to MegaManager AI\\!*\n\n"
+						welcomeMsg += "Available commands:\n"
+						welcomeMsg += "• `/stats` \\- Get channel statistics\n"
+						welcomeMsg += "• `/trending` \\- Get trending videos in your niche\n\n"
+						welcomeMsg += "I'll also send you automatic updates:\n"
+						welcomeMsg += "• 📊 Channel stats every 3 hours\n"
+						welcomeMsg += "• 🔥 Trending videos every 12 hours\n"
+						welcomeMsg += "• 💬 New comment notifications\\n"
+						if err := ui.SendMessage(ctx, welcomeMsg); err != nil {
+							log.Printf("❌ Failed to send welcome message: %v", err)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 // Helper formatting functions
-func formatVideo(index int, video *Video) string {
-	return fmt.Sprintf("%d. \"%s\" - %s\n", index, video.Title, formatViews(video.ViewCount))
+func escapeMarkdown(text string) string {
+	// Escape Telegram Markdown special characters
+	replacer := strings.NewReplacer(
+		"_", "\\_",
+		"*", "\\*",
+		"[", "\\[",
+		"]", "\\]",
+		"(", "\\(",
+		")", "\\)",
+		"~", "\\~",
+		"`", "\\`",
+		">", "\\>",
+		"#", "\\#",
+		"+", "\\+",
+		"-", "\\-",
+		"=", "\\=",
+		"|", "\\|",
+		"{", "\\{",
+		"}", "\\}",
+		".", "\\.",
+		"!", "\\!",
+	)
+	return replacer.Replace(text)
 }
 
 func formatViews(count int64) string {
@@ -351,39 +446,31 @@ func formatViews(count int64) string {
 }
 
 func formatChannelStats(stats *ChannelStats) string {
-	msg := fmt.Sprintf(`📊 Channel Pulse Monitor
-
-👥 Subscribers: %s
-
-🎬 Recent Videos Performance:
-`,
-		formatNumber(stats.SubscriberCount))
+	msg := "`╔═══════════════════════════╗`\n"
+	msg += "`║  CHANNEL PULSE MONITOR    ║`\n"
+	msg += "`╚═══════════════════════════╝`\n\n"
+	msg += fmt.Sprintf("👥 Subscribers: *%s*\n\n", formatNumber(stats.SubscriberCount))
 
 	if len(stats.RecentVideos) == 0 {
-		msg += "\nNo recent videos found\n"
-	} else {
-		for i, video := range stats.RecentVideos {
-			// Calculate views per day
-			viewsPerDay := int64(0)
-			if video.AgeInDays > 0 {
-				viewsPerDay = video.ViewCount / int64(video.AgeInDays)
-			}
-
-			msg += fmt.Sprintf(`
-%d. %s
-   👀 %s views (%s/day) | 👍 %s | 💬 %s
-   📅 %d days ago`,
-				i+1,
-				truncateTitle(video.Title, 60),
-				formatNumber(video.ViewCount),
-				formatNumber(viewsPerDay),
-				formatNumber(video.LikeCount),
-				formatNumber(video.CommentCount),
-				video.AgeInDays)
-		}
+		msg += "No recent videos found"
+		return msg
 	}
 
-	msg += fmt.Sprintf("\n\nUpdated: %s", time.Now().Format("Jan 02, 15:04 MST"))
+	for i, video := range stats.RecentVideos {
+		// Calculate views per day
+
+		msg += fmt.Sprintf("\n\n*▶ VIDEO %d*\n", i+1)
+		msg += "`───────────────────────────`\n"
+		msg += fmt.Sprintf("%s\n", escapeMarkdown(truncateTitle(video.Title, 50)))
+		msg += fmt.Sprintf("📅 %d days ago\n", video.AgeInDays)
+		msg += fmt.Sprintf("👁 %s  👍 %s  💬 %s\n",
+			formatNumberCompact(video.ViewCount),
+			formatNumberCompact(video.LikeCount),
+			formatNumberCompact(video.CommentCount))
+	}
+
+	msg += fmt.Sprintf("_Updated: %s_", time.Now().Format("Jan 02, 15:04"))
+
 	return msg
 }
 
@@ -404,19 +491,56 @@ func formatNumber(n int64) string {
 	return fmt.Sprintf("%d", n)
 }
 
+func formatNumberCompact(n int64) string {
+	if n >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(n)/1000000.0)
+	}
+	if n >= 1000 {
+		return fmt.Sprintf("%.1fK", float64(n)/1000.0)
+	}
+	return fmt.Sprintf("%d", n)
+}
+
 func formatCommentNotification(comment *Comment, aiReply string) string {
-	return fmt.Sprintf(`📬 New Comment
+	msg := "`╔═══════════════════════════╗`\n"
+	msg += "`║      NEW COMMENT          ║`\n"
+	msg += "`╚═══════════════════════════╝`\n\n"
 
-👤 User: %s
-💬 Comment:
-"%s"
+	msg += fmt.Sprintf("👤 *From:* %s\n\n", escapeMarkdown(comment.Author))
 
-🤖 AI Suggested Reply:
-"%s"
+	msg += "*💬 COMMENT:*\n"
+	msg += fmt.Sprintf("%s\n\n", escapeMarkdown(wrapText(comment.Text, 50)))
 
-[Note: In full version, buttons would appear here for Confirm/Edit/Ignore]`,
-		comment.Author,
-		comment.Text,
-		aiReply,
-	)
+	msg += "*🤖 SUGGESTED REPLY:*\n"
+	msg += fmt.Sprintf("%s\n\n", escapeMarkdown(wrapText(aiReply, 50)))
+
+	msg += "⚠️ _Reply manually on YouTube_"
+
+	return msg
+}
+
+func wrapText(text string, width int) string {
+	if len(text) <= width {
+		return text
+	}
+
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return text
+	}
+
+	var lines []string
+	currentLine := words[0]
+
+	for _, word := range words[1:] {
+		if len(currentLine)+1+len(word) <= width {
+			currentLine += " " + word
+		} else {
+			lines = append(lines, currentLine)
+			currentLine = word
+		}
+	}
+	lines = append(lines, currentLine)
+
+	return strings.Join(lines, "\n")
 }

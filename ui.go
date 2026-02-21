@@ -35,9 +35,9 @@ func (t *TelegramUI) SendMessage(ctx context.Context, text string) error {
 	endpoint := fmt.Sprintf("%s/sendMessage", t.baseURL)
 
 	requestBody := map[string]interface{}{
-		"chat_id": t.chatID,
-		"text":    text,
-		// No parse_mode - send as plain text
+		"chat_id":    t.chatID,
+		"text":       text,
+		"parse_mode": "Markdown",
 	}
 
 	jsonData, err := json.Marshal(requestBody)

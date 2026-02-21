@@ -182,51 +182,63 @@ megamanager/
 When the bot runs its trend scan, you'll receive a Telegram message like:
 
 ```
-🔥 Trending in Your Niche (Top 5):
+╔═══════════════════════════╗
+║ TRENDING IN YOUR NICHE   ║
+╚═══════════════════════════╝
 
-1. "How to build AI agents in 2026" - 2.3M views
-2. "Golang microservices tutorial" - 1.8M views
-3. "Best Go frameworks comparison" - 1.5M views
-4. "Cloud-native Go patterns" - 1.2M views
-5. "Go API design best practices" - 980K views
+🔥 #1
+───────────────────────────
+How to build AI agents in 2026
+👁 2.3M views
 
-💡 Inspiration: Pick a topic and create your version!
+🔥 #2
+───────────────────────────
+Golang microservices tutorial
+👁 1.8M views
+
+🔥 #3
+───────────────────────────
+Best Go frameworks comparison
+👁 1.5M views
+
+💡 Pick a topic & create your version!
 ```
 
 **Note:** Only shows trending videos from your channel's category, so you get relevant inspiration.
 
 ### Pulse Monitor Notification
 
-Every 3 hours, you'll receive actionable metrics:
+Every 3 hours, you'll receive actionable metrics (YouTube Studio style):
 
 ```
-📊 Channel Pulse Monitor
+╔═══════════════════════════╗
+║  CHANNEL PULSE MONITOR    ║
+╚═══════════════════════════╝
 
 👥 Subscribers: 12.5K
 
-🎬 Recent Videos Performance:
+▶ VIDEO 1
+───────────────────────────
+Building a YouTube Bot in Go
+📅 4 days ago
+👁 15.2K  👍 892  💬 143
+📈 3.8K/day
 
-1. Building a YouTube Bot in Go
-   👀 15.2K views (3.8K/day) | 👍 892 | 💬 143
-   📅 4 days ago
+▶ VIDEO 2
+───────────────────────────
+Golang Concurrency Explained
+📅 4 days ago
+👁 8.5K  👍 445  💬 67
+📈 2.1K/day
 
-2. Golang Concurrency Explained
-   👀 8.5K views (2.1K/day) | 👍 445 | 💬 67
-   📅 4 days ago
+▶ VIDEO 3
+───────────────────────────
+REST API with Go - Complete Guide
+📅 17 days ago
+👁 22.1K  👍 1.2K  💬 201
+📈 1.3K/day
 
-3. REST API with Go - Complete Guide
-   👀 22.1K views (1.3K/day) | 👍 1.2K | 💬 201
-   📅 17 days ago
-
-4. Docker & Go: Best Practices
-   👀 31.5K views (1.1K/day) | 👍 1.8K | 💬 289
-   📅 28 days ago
-
-5. Testing in Go - Comprehensive Tutorial
-   👀 45.7K views (918/day) | 👍 2.3K | 💬 412
-   📅 50 days ago
-
-Updated: Feb 21, 21:05 PST
+Updated: Feb 21, 22:10
 ```
 
 **Key metrics:**
@@ -238,15 +250,22 @@ Updated: Feb 21, 21:05 PST
 ### Smart Responder Flow
 
 ```
-📬 New Comment on "Your Video Title"
+╔═══════════════════════════╗
+║      NEW COMMENT          ║
+╚═══════════════════════════╝
 
-👤 User: @john_doe
-💬 "Great tutorial! Can you make one about microservices?"
+👤 From: @john_doe
 
-🤖 AI Suggested Reply:
-"Thanks for watching! That's a great suggestion. I'll add microservices to my content roadmap. Stay tuned!"
+💬 COMMENT:
+Great tutorial! Can you make one about
+microservices?
 
-[✅ Confirm] [📝 Edit] [❌ Ignore]
+🤖 SUGGESTED REPLY:
+Thanks for watching! That's a great
+suggestion. I'll add microservices to my
+content roadmap. Stay tuned!
+
+⚠️ Reply manually on YouTube
 ```
 
 ---
