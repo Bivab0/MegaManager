@@ -131,7 +131,7 @@ func (t *TelegramUI) GetUpdates(ctx context.Context, offset int) ([]Update, erro
 
 	requestBody := map[string]interface{}{
 		"offset":  offset,
-		"timeout": 30,
+		"timeout": 25, // Telegram long polling timeout (keep under client timeout)
 	}
 
 	jsonData, err := json.Marshal(requestBody)

@@ -366,7 +366,11 @@ func runCommandHandler(ctx context.Context, platform *YouTubePlatform, ui *Teleg
 		case <-ticker.C:
 			updates, err := ui.GetUpdates(ctx, offset)
 			if err != nil {
-				log.Printf("Failed to get updates: %v", err)
+				// Only log non-timeout errors (timeouts are normal for long polling)
+				if !strings.Contains(err.Error(), "context deadline exceeded") &&
+					!strings.Contains(err.Error(), "timeout") {
+					log.Printf("❌ Command Handler error: %v", err)
+				}
 				continue
 			}
 
