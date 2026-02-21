@@ -1,8 +1,15 @@
-# Project Description: MegaManager AI
+# MegaManager AI
 
-**MegaManager** is a high-performance, stateless automation engine built in **Golang**. It acts as an intelligent bridge between video platforms (like YouTube), Large Language Models (LLMs), and a Telegram-based control center.
+> **Minimal YouTube automation bot in Go - 4 files, 970 lines, < 10MB RAM**
 
-The goal of the project is to provide a "Human-in-the-loop" automation experience where the AI does the heavy lifting (monitoring, researching, and drafting), but the user retains 100% control over the final output.
+**MegaManager** is a lightweight, stateless automation engine built in pure Go (standard library only). It monitors your YouTube channel and sends intelligent notifications to Telegram, giving you "human-in-the-loop" control over your content strategy.
+
+**Quick Start:**
+```bash
+cp .env.example .env     # Copy config file
+nano .env                # Add your API keys
+go run main.go           # Start the bot
+```
 
 ## 🌟 Core Value Proposition
 
@@ -117,10 +124,10 @@ COMMENT_POLL_INTERVAL=5     # 5 minutes
 
 ```bash
 # Run directly
-go run cmd/megamanager/main.go
+go run main.go
 
 # Or build and run
-go build -o megamanager cmd/megamanager/main.go
+go build -o megamanager
 ./megamanager
 ```
 
