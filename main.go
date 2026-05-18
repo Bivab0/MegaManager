@@ -363,13 +363,21 @@ func trendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI, 
 
 	log.Printf("🔥 Found %d NEW trending video(s)!", len(newVideos))
 
-	// Send notification for each new trending video
+	// Send notification for each new trending video with analytics
 	for _, video := range newVideos {
+		// Calculate analytics
+		viewsPerHour := calculateViewsPerHour(video.ViewCount, video.PublishedAt)
+		ageHours := calculateVideoAge(video.PublishedAt)
+		heatEmoji, heatLevel := getHeatLevel(viewsPerHour)
+		opportunity := getOpportunityWindow(viewsPerHour, ageHours)
+
 		message := "`╔═══════════════════════════╗`\n"
-		message += "`║  🚨 NEW TRENDING VIDEO    ║`\n"
+		message += fmt.Sprintf("`║  %s TREND SURGING         ║`\n", heatEmoji)
 		message += "`╚═══════════════════════════╝`\n\n"
 		message += fmt.Sprintf("*%s*\n\n", escapeMarkdown(video.Title))
-		message += fmt.Sprintf("👁 *%s*\n", formatViews(video.ViewCount))
+		message += fmt.Sprintf("👁 *%s* in %s\n", formatViewsCompact(video.ViewCount), formatAgeCompact(video.PublishedAt))
+		message += fmt.Sprintf("📈 *%s/hour* \\(%s\\)\n", formatViewsCompact(viewsPerHour), heatLevel)
+		message += fmt.Sprintf("⏱ Opportunity: %s\n\n", opportunity)
 		message += fmt.Sprintf("🔗 https://youtube\\.com/watch?v=%s\n\n", video.ID)
 		message += "💡 _Create your version while it's hot\\!_"
 
@@ -398,13 +406,19 @@ func getTrendingNow(ctx context.Context, platform *YouTubePlatform, ui *Telegram
 		message += "No trending videos found"
 	} else {
 		for i, video := range trending {
-			message += fmt.Sprintf("🔥 *#%d*\n", i+1)
+			viewsPerHour := calculateViewsPerHour(video.ViewCount, video.PublishedAt)
+			heatEmoji, heatLevel := getHeatLevel(viewsPerHour)
+
+			message += fmt.Sprintf("%s *#%d* \\[%s\\]\n", heatEmoji, i+1, heatLevel)
 			message += "`───────────────────────────`\n"
-			message += fmt.Sprintf("%s\n", escapeMarkdown(truncateTitle(video.Title, 50)))
-			message += fmt.Sprintf("👁 %s\n", formatViews(video.ViewCount))
+			message += fmt.Sprintf("%s\n", escapeMarkdown(truncateTitle(video.Title, 45)))
+			message += fmt.Sprintf("👁 %s in %s • 📈 %s/hr\n",
+				formatViewsCompact(video.ViewCount),
+				formatAgeCompact(video.PublishedAt),
+				formatViewsCompact(viewsPerHour))
 			message += fmt.Sprintf("🔗 https://youtube\\.com/watch?v=%s\n\n", video.ID)
 		}
-		message += "💡 *Pick a topic & create your version\\!*"
+		message += "💡 *Pick a hot topic & create your version\\!*"
 	}
 
 	return ui.SendMessage(ctx, message)
@@ -611,6 +625,80 @@ func formatViews(count int64) string {
 		return fmt.Sprintf("%.1fK views", float64(count)/1000.0)
 	}
 	return fmt.Sprintf("%d views", count)
+}
+
+// formatViewsCompact returns views without "views" suffix
+func formatViewsCompact(count int64) string {
+	if count >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(count)/1000000.0)
+	}
+	if count >= 1000 {
+		return fmt.Sprintf("%.1fK", float64(count)/1000.0)
+	}
+	return fmt.Sprintf("%d", count)
+}
+
+// calculateVideoAge returns video age in hours
+func calculateVideoAge(publishedAt time.Time) float64 {
+	return time.Since(publishedAt).Hours()
+}
+
+// calculateViewsPerHour returns average views per hour
+func calculateViewsPerHour(views int64, publishedAt time.Time) int64 {
+	hours := calculateVideoAge(publishedAt)
+	if hours < 1 {
+		hours = 1 // Minimum 1 hour to avoid division issues
+	}
+	return int64(float64(views) / hours)
+}
+
+// formatAgeCompact returns a human-readable age string
+func formatAgeCompact(publishedAt time.Time) string {
+	hours := calculateVideoAge(publishedAt)
+	if hours < 1 {
+		return "< 1 hour"
+	}
+	if hours < 24 {
+		return fmt.Sprintf("%.0f hours", hours)
+	}
+	days := hours / 24
+	if days < 7 {
+		return fmt.Sprintf("%.0f days", days)
+	}
+	return fmt.Sprintf("%.0f weeks", days/7)
+}
+
+// getHeatLevel returns a heat indicator based on views per hour
+func getHeatLevel(viewsPerHour int64) (string, string) {
+	// Heat levels based on views/hour velocity
+	if viewsPerHour >= 50000 {
+		return "🔥🔥🔥", "EXTREME"
+	}
+	if viewsPerHour >= 20000 {
+		return "🔥🔥", "VERY HIGH"
+	}
+	if viewsPerHour >= 10000 {
+		return "🔥", "HIGH"
+	}
+	if viewsPerHour >= 5000 {
+		return "📈", "MODERATE"
+	}
+	return "📊", "NORMAL"
+}
+
+// getOpportunityWindow returns opportunity assessment
+func getOpportunityWindow(viewsPerHour int64, ageHours float64) string {
+	// Best opportunity: high velocity + young video
+	if viewsPerHour >= 10000 && ageHours < 12 {
+		return "🟢 HIGH \\- Act now\\!"
+	}
+	if viewsPerHour >= 5000 && ageHours < 24 {
+		return "🟡 MEDIUM \\- Good timing"
+	}
+	if ageHours > 48 {
+		return "🔴 LOW \\- Topic maturing"
+	}
+	return "🟡 MEDIUM"
 }
 
 func formatChannelStats(stats *ChannelStats) string {
