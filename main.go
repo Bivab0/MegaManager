@@ -14,6 +14,12 @@ import (
 	"time"
 )
 
+// Cache size limits to prevent memory growth over long runs
+const (
+	maxSeenVideos       = 500  // Max trending video IDs to track (~5KB)
+	maxProcessedComments = 1000 // Max comment IDs to track (~25KB)
+)
+
 // Config holds all application configuration
 type Config struct {
 	// YouTube
@@ -289,9 +295,17 @@ func runTrendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramU
 			log.Println("🔥 Trend Scout stopping...")
 			return
 		case <-ticker.C:
+			// Prevent unbounded cache growth - clear if too large
+			if len(seenVideos) > maxSeenVideos {
+				log.Printf("🔥 Clearing trend cache (was %d entries)", len(seenVideos))
+				seenVideos = make(map[string]bool)
+				isFirstRun = true // Treat as first run to repopulate
+			}
+
 			if err := trendScout(ctx, platform, ui, seenVideos, isFirstRun); err != nil {
 				log.Printf("❌ Trend Scout error: %v", err)
 			}
+			isFirstRun = false
 		}
 	}
 }
@@ -447,6 +461,12 @@ func runSmartResponder(ctx context.Context, platform *YouTubePlatform, ai *LLMCl
 			log.Println("💬 Smart Responder stopping...")
 			return
 		case <-ticker.C:
+			// Prevent unbounded cache growth - clear if too large
+			if len(processedComments) > maxProcessedComments {
+				log.Printf("💬 Clearing comment cache (was %d entries)", len(processedComments))
+				processedComments = make(map[string]bool)
+			}
+
 			if err := smartResponder(ctx, platform, ai, ui, processedComments); err != nil {
 				log.Printf("❌ Smart Responder error: %v", err)
 			}
