@@ -33,6 +33,16 @@ type Config struct {
 	TrendScoutInterval   int
 	PulseMonitorInterval int
 	CommentPollInterval  int
+
+	// Trend Scout settings
+	TrendScoutCategory string // YouTube category ID (e.g., "20" for Gaming, "28" for Science & Tech)
+	TrendScoutRegion   string // Region code (e.g., "US", "IN", "GB")
+
+	// Feature toggles
+	EnableTrendScout     bool
+	EnablePulseMonitor   bool
+	EnableSmartResponder bool
+	EnableCommandHandler bool
 }
 
 // loadEnvFile loads .env file if it exists
@@ -84,9 +94,17 @@ func loadConfig() (*Config, error) {
 		LLMEndpoint:          os.Getenv("LLM_API_ENDPOINT"),
 		LLMAPIKey:            os.Getenv("LLM_API_KEY"),
 		LLMModel:             getEnv("LLM_MODEL", "gpt-4o-mini"),
-		TrendScoutInterval:   getEnvInt("TREND_SCOUT_INTERVAL", 720),
+		TrendScoutInterval:   getEnvInt("TREND_SCOUT_INTERVAL", 30), // Default 30 min for faster detection
 		PulseMonitorInterval: getEnvInt("PULSE_MONITOR_INTERVAL", 180),
 		CommentPollInterval:  getEnvInt("COMMENT_POLL_INTERVAL", 5),
+		// Trend Scout settings
+		TrendScoutCategory: os.Getenv("TREND_SCOUT_CATEGORY"), // Empty = auto-detect from channel
+		TrendScoutRegion:   getEnv("TREND_SCOUT_REGION", "US"),
+		// Feature toggles (all enabled by default)
+		EnableTrendScout:     getEnvBool("ENABLE_TREND_SCOUT", true),
+		EnablePulseMonitor:   getEnvBool("ENABLE_PULSE_MONITOR", true),
+		EnableSmartResponder: getEnvBool("ENABLE_SMART_RESPONDER", true),
+		EnableCommandHandler: getEnvBool("ENABLE_COMMAND_HANDLER", true),
 	}
 
 	// Validate required fields
@@ -102,11 +120,14 @@ func loadConfig() (*Config, error) {
 	if cfg.TelegramChatID == "" {
 		log.Fatal("TELEGRAM_CHAT_ID is required")
 	}
-	if cfg.LLMEndpoint == "" {
-		log.Fatal("LLM_API_ENDPOINT is required")
-	}
-	if cfg.LLMAPIKey == "" {
-		log.Fatal("LLM_API_KEY is required")
+	// LLM credentials only required if Smart Responder is enabled
+	if cfg.EnableSmartResponder {
+		if cfg.LLMEndpoint == "" {
+			log.Fatal("LLM_API_ENDPOINT is required when ENABLE_SMART_RESPONDER is true")
+		}
+		if cfg.LLMAPIKey == "" {
+			log.Fatal("LLM_API_KEY is required when ENABLE_SMART_RESPONDER is true")
+		}
 	}
 
 	return cfg, nil
@@ -128,6 +149,22 @@ func getEnvInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
+func getEnvBool(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	// Accept common boolean representations
+	switch strings.ToLower(value) {
+	case "true", "1", "yes", "on":
+		return true
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return defaultValue
+	}
+}
+
 func main() {
 	log.Println("🚀 MegaManager AI starting...")
 
@@ -138,9 +175,14 @@ func main() {
 	}
 
 	// Initialize providers
-	platform := NewYouTubePlatform(cfg.YouTubeAPIKey, cfg.YouTubeChannelID)
-	ai := NewLLMClient(cfg.LLMEndpoint, cfg.LLMAPIKey, cfg.LLMModel)
+	platform := NewYouTubePlatform(cfg.YouTubeAPIKey, cfg.YouTubeChannelID, cfg.TrendScoutCategory, cfg.TrendScoutRegion)
 	ui := NewTelegramUI(cfg.TelegramBotToken, cfg.TelegramChatID)
+
+	// Only initialize LLM client if Smart Responder is enabled
+	var ai *LLMClient
+	if cfg.EnableSmartResponder {
+		ai = NewLLMClient(cfg.LLMEndpoint, cfg.LLMAPIKey, cfg.LLMModel)
+	}
 
 	// Context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -154,38 +196,63 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Start Trend Scout (runs every N minutes)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		runTrendScout(ctx, platform, ui, time.Duration(cfg.TrendScoutInterval)*time.Minute)
-	}()
+	if cfg.EnableTrendScout {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runTrendScout(ctx, platform, ui, time.Duration(cfg.TrendScoutInterval)*time.Minute)
+		}()
+	}
 
 	// Start Pulse Monitor (runs every N minutes)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		runPulseMonitor(ctx, platform, ui, time.Duration(cfg.PulseMonitorInterval)*time.Minute)
-	}()
+	if cfg.EnablePulseMonitor {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runPulseMonitor(ctx, platform, ui, time.Duration(cfg.PulseMonitorInterval)*time.Minute)
+		}()
+	}
 
 	// Start Smart Responder (polls every N minutes)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		runSmartResponder(ctx, platform, ai, ui, time.Duration(cfg.CommentPollInterval)*time.Minute)
-	}()
+	if cfg.EnableSmartResponder {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runSmartResponder(ctx, platform, ai, ui, time.Duration(cfg.CommentPollInterval)*time.Minute)
+		}()
+	}
 
 	// Start Command Handler (responds to Telegram commands)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		runCommandHandler(ctx, platform, ui)
-	}()
+	if cfg.EnableCommandHandler {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runCommandHandler(ctx, platform, ui)
+		}()
+	}
 
-	log.Println("✅ All services started successfully")
-	log.Printf("📊 Trend Scout: every %d minutes", cfg.TrendScoutInterval)
-	log.Printf("📈 Pulse Monitor: every %d minutes", cfg.PulseMonitorInterval)
-	log.Printf("💬 Smart Responder: every %d minutes", cfg.CommentPollInterval)
-	log.Println("🤖 Command Handler: listening for /stats and /trending")
+	// Log enabled services
+	log.Println("✅ Services started:")
+	if cfg.EnableTrendScout {
+		log.Printf("  🔥 Trend Scout: every %d minutes", cfg.TrendScoutInterval)
+	} else {
+		log.Println("  🔥 Trend Scout: disabled")
+	}
+	if cfg.EnablePulseMonitor {
+		log.Printf("  📈 Pulse Monitor: every %d minutes", cfg.PulseMonitorInterval)
+	} else {
+		log.Println("  📈 Pulse Monitor: disabled")
+	}
+	if cfg.EnableSmartResponder {
+		log.Printf("  💬 Smart Responder: every %d minutes", cfg.CommentPollInterval)
+	} else {
+		log.Println("  💬 Smart Responder: disabled")
+	}
+	if cfg.EnableCommandHandler {
+		log.Println("  🤖 Command Handler: listening for /stats and /trending")
+	} else {
+		log.Println("  🤖 Command Handler: disabled")
+	}
 
 	// Wait for shutdown signal
 	<-sigChan
@@ -201,14 +268,20 @@ func main() {
 }
 
 // runTrendScout runs the trend scouting service on an interval
+// It tracks seen videos and only notifies when NEW videos enter trending
 func runTrendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// Track seen video IDs to detect new trending videos
+	seenVideos := make(map[string]bool)
+	isFirstRun := true
+
 	// Run immediately on start
-	if err := trendScout(ctx, platform, ui); err != nil {
+	if err := trendScout(ctx, platform, ui, seenVideos, isFirstRun); err != nil {
 		log.Printf("❌ Trend Scout error: %v", err)
 	}
+	isFirstRun = false
 
 	for {
 		select {
@@ -216,25 +289,95 @@ func runTrendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramU
 			log.Println("🔥 Trend Scout stopping...")
 			return
 		case <-ticker.C:
-			if err := trendScout(ctx, platform, ui); err != nil {
+			if err := trendScout(ctx, platform, ui, seenVideos, isFirstRun); err != nil {
 				log.Printf("❌ Trend Scout error: %v", err)
 			}
 		}
 	}
 }
 
-// trendScout fetches trending videos and sends them to Telegram
-func trendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI) error {
-	log.Println("🔥 Running Trend Scout...")
+// trendScout fetches trending videos and notifies only about NEW ones
+func trendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI, seenVideos map[string]bool, isFirstRun bool) error {
+	log.Println("🔥 Checking for new trending videos...")
+
+	trending, err := platform.GetTrendingVideos(ctx, 10) // Fetch more to track
+	if err != nil {
+		return err
+	}
+
+	if len(trending) == 0 {
+		log.Println("🔥 No trending videos found")
+		return nil
+	}
+
+	// On first run, just populate the seen list and send a summary
+	if isFirstRun {
+		for _, video := range trending {
+			seenVideos[video.ID] = true
+		}
+
+		// Send initial summary
+		message := "`╔═══════════════════════════╗`\n"
+		message += "`║ TREND SCOUT ACTIVE        ║`\n"
+		message += "`╚═══════════════════════════╝`\n\n"
+		message += fmt.Sprintf("📊 Tracking *%d* trending videos\n", len(trending))
+		message += "🔔 You'll be notified when NEW videos trend\\!\n\n"
+		message += "*Currently trending:*\n"
+		for i, video := range trending {
+			if i >= 5 {
+				break
+			}
+			message += fmt.Sprintf("• %s \\(%s\\)\n", escapeMarkdown(truncateTitle(video.Title, 40)), formatViews(video.ViewCount))
+		}
+
+		return ui.SendMessage(ctx, message)
+	}
+
+	// Find NEW trending videos
+	var newVideos []*Video
+	for _, video := range trending {
+		if !seenVideos[video.ID] {
+			newVideos = append(newVideos, video)
+			seenVideos[video.ID] = true
+		}
+	}
+
+	if len(newVideos) == 0 {
+		log.Println("🔥 No new trending videos detected")
+		return nil
+	}
+
+	log.Printf("🔥 Found %d NEW trending video(s)!", len(newVideos))
+
+	// Send notification for each new trending video
+	for _, video := range newVideos {
+		message := "`╔═══════════════════════════╗`\n"
+		message += "`║  🚨 NEW TRENDING VIDEO    ║`\n"
+		message += "`╚═══════════════════════════╝`\n\n"
+		message += fmt.Sprintf("*%s*\n\n", escapeMarkdown(video.Title))
+		message += fmt.Sprintf("👁 *%s*\n", formatViews(video.ViewCount))
+		message += fmt.Sprintf("🔗 https://youtube\\.com/watch?v=%s\n\n", video.ID)
+		message += "💡 _Create your version while it's hot\\!_"
+
+		if err := ui.SendMessage(ctx, message); err != nil {
+			log.Printf("❌ Failed to send trending notification: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// getTrendingNow fetches and displays all current trending videos (for manual /trending command)
+func getTrendingNow(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI) error {
+	log.Println("🔥 Fetching current trending videos...")
 
 	trending, err := platform.GetTrendingVideos(ctx, 5)
 	if err != nil {
 		return err
 	}
 
-	// Build formatted message
 	message := "`╔═══════════════════════════╗`\n"
-	message += "`║ TRENDING IN YOUR NICHE   ║`\n"
+	message += "`║ TRENDING NOW              ║`\n"
 	message += "`╚═══════════════════════════╝`\n\n"
 
 	if len(trending) == 0 {
@@ -244,9 +387,10 @@ func trendScout(ctx context.Context, platform *YouTubePlatform, ui *TelegramUI) 
 			message += fmt.Sprintf("🔥 *#%d*\n", i+1)
 			message += "`───────────────────────────`\n"
 			message += fmt.Sprintf("%s\n", escapeMarkdown(truncateTitle(video.Title, 50)))
-			message += fmt.Sprintf("👁 %s\n\n", formatViews(video.ViewCount))
+			message += fmt.Sprintf("👁 %s\n", formatViews(video.ViewCount))
+			message += fmt.Sprintf("🔗 https://youtube\\.com/watch?v=%s\n\n", video.ID)
 		}
-		message += "💡 *Pick a topic & create your version!*"
+		message += "💡 *Pick a topic & create your version\\!*"
 	}
 
 	return ui.SendMessage(ctx, message)
@@ -390,7 +534,7 @@ func runCommandHandler(ctx context.Context, platform *YouTubePlatform, ui *Teleg
 
 					case "/trending":
 						log.Println("🔥 Received /trending command")
-						if err := trendScout(ctx, platform, ui); err != nil {
+						if err := getTrendingNow(ctx, platform, ui); err != nil {
 							log.Printf("❌ Failed to send trending: %v", err)
 						}
 

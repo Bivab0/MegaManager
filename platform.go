@@ -47,17 +47,24 @@ type RecentVideo struct {
 
 // YouTubePlatform handles all YouTube API operations
 type YouTubePlatform struct {
-	apiKey    string
-	channelID string
-	client    *http.Client
-	baseURL   string
+	apiKey         string
+	channelID      string
+	client         *http.Client
+	baseURL        string
+	trendCategory  string // Override category for trending (empty = auto-detect)
+	trendRegion    string // Region code for trending videos
 }
 
 // NewYouTubePlatform creates a new YouTube platform provider
-func NewYouTubePlatform(apiKey, channelID string) *YouTubePlatform {
+func NewYouTubePlatform(apiKey, channelID, trendCategory, trendRegion string) *YouTubePlatform {
+	if trendRegion == "" {
+		trendRegion = "US"
+	}
 	return &YouTubePlatform{
-		apiKey:    apiKey,
-		channelID: channelID,
+		apiKey:        apiKey,
+		channelID:     channelID,
+		trendCategory: trendCategory,
+		trendRegion:   trendRegion,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -65,13 +72,17 @@ func NewYouTubePlatform(apiKey, channelID string) *YouTubePlatform {
 	}
 }
 
-// GetTrendingVideos fetches trending videos in the same category as your channel
+// GetTrendingVideos fetches trending videos based on configured category and region
 func (y *YouTubePlatform) GetTrendingVideos(ctx context.Context, limit int) ([]*Video, error) {
-	// First, get the channel's category
-	categoryID, err := y.getChannelCategory(ctx)
-	if err != nil {
-		// Fallback to generic trending if we can't get category
-		categoryID = ""
+	// Use configured category, or auto-detect from channel if not set
+	categoryID := y.trendCategory
+	if categoryID == "" {
+		var err error
+		categoryID, err = y.getChannelCategory(ctx)
+		if err != nil {
+			// Fallback to generic trending if we can't get category
+			categoryID = ""
+		}
 	}
 
 	endpoint := fmt.Sprintf("%s/videos", y.baseURL)
@@ -79,7 +90,7 @@ func (y *YouTubePlatform) GetTrendingVideos(ctx context.Context, limit int) ([]*
 	params := url.Values{}
 	params.Set("part", "snippet,statistics")
 	params.Set("chart", "mostPopular")
-	params.Set("regionCode", "US")
+	params.Set("regionCode", y.trendRegion)
 	params.Set("maxResults", fmt.Sprintf("%d", limit*2)) // Get more to filter
 	if categoryID != "" {
 		params.Set("videoCategoryId", categoryID)
